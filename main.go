@@ -6,8 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/fogleman/gg"
-	"github.com/golang/freetype/truetype"
 	"image"
 	"image/color"
 	"image/draw"
@@ -21,6 +19,9 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+
+	"github.com/fogleman/gg"
+	"github.com/golang/freetype/truetype"
 )
 
 var (
@@ -29,6 +30,7 @@ var (
 	//go:embed favicon.ico
 	faviconBytes   []byte
 	faviconModTime = time.Now()
+	colorful       *bool
 )
 
 type imgFormat string
@@ -41,6 +43,7 @@ const (
 
 func main() {
 	port := flag.Uint("port", 8080, "HTTP port")
+	colorful = flag.Bool("colorful", false, "Colorful image")
 	flag.Parse()
 
 	http.HandleFunc("/favicon.ico", faviconHandler)
@@ -164,9 +167,7 @@ func findRegexpMatches(exp *regexp.Regexp, str string) map[string]string {
 }
 
 func drawImage(w io.Writer, width, height int, text string, format imgFormat) error {
-	clr := color.Gray16{Y: 32767}
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	draw.Draw(img, img.Bounds(), image.NewUniform(clr), image.Point{}, draw.Src)
+	img := drawBackground(width, height)
 	err := drawLabel(img, width, height, text)
 	if err != nil {
 		return fmt.Errorf("failed to draw label: %w", err)
@@ -185,8 +186,34 @@ func drawImage(w io.Writer, width, height int, text string, format imgFormat) er
 	return nil
 }
 
-func drawLabel(img *image.RGBA, width, height int, text string) error {
-	dc := gg.NewContextForRGBA(img)
+func drawBackground(width, height int) image.Image {
+	if *colorful {
+		dc := gg.NewContext(width, height)
+
+		grad := gg.NewLinearGradient(0, 0, float64(width), float64(height))
+		grad.AddColorStop(0, color.RGBA{0, 255, 0, 255})
+		grad.AddColorStop(1, color.RGBA{0, 0, 255, 255})
+		grad.AddColorStop(0.5, color.RGBA{255, 0, 0, 255})
+
+		dc.SetFillStyle(grad)
+		dc.MoveTo(0, 0)
+		dc.LineTo(float64(width), 0)
+		dc.LineTo(float64(width), float64(height))
+		dc.LineTo(0, float64(height))
+		dc.ClosePath()
+		dc.Fill()
+
+		return dc.Image()
+	} else {
+		clr := color.Gray16{Y: 32767}
+		img := image.NewRGBA(image.Rect(0, 0, width, height))
+		draw.Draw(img, img.Bounds(), image.NewUniform(clr), image.Point{}, draw.Src)
+		return img
+	}
+}
+
+func drawLabel(img image.Image, width, height int, text string) error {
+	dc := gg.NewContextForRGBA(img.(*image.RGBA))
 	err := loadFontFace(dc, width, height, text)
 	if err != nil {
 		return fmt.Errorf("failed to load font: %w", err)
